@@ -1,0 +1,137 @@
+from pymongo import MongoClient
+from bson.objectid import ObjectId
+import json
+import requests
+from bs4 import BeautifulSoup
+
+# MongoDB Connection
+client = MongoClient("mongodb+srv://<username>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority")
+db = client["cat_database"]
+collection = db["cats"]
+
+def create_cat(name, age, features):
+    """Create a new cat record in the database."""
+    try:
+        cat = {"name": name, "age": age, "features": features}
+        collection.insert_one(cat)
+        print("Cat added successfully.")
+    except Exception as e:
+        print("Error:", e)
+
+def read_all_cats():
+    """Read all cat records from the database."""
+    try:
+        cats = collection.find()
+        for cat in cats:
+            print(cat)
+    except Exception as e:
+        print("Error:", e)
+
+def read_cat_by_name(name):
+    """Find a cat by name."""
+    try:
+        cat = collection.find_one({"name": name})
+        if cat:
+            print(cat)
+        else:
+            print("No cat found with that name.")
+    except Exception as e:
+        print("Error:", e)
+
+def update_cat_age(name, new_age):
+    """Update the age of a cat by name."""
+    try:
+        result = collection.update_one({"name": name}, {"$set": {"age": new_age}})
+        if result.matched_count:
+            print("Cat age updated successfully.")
+        else:
+            print("No cat found with that name.")
+    except Exception as e:
+        print("Error:", e)
+
+def add_feature_to_cat(name, new_feature):
+    """Add a feature to a cat by name."""
+    try:
+        result = collection.update_one({"name": name}, {"$addToSet": {"features": new_feature}})
+        if result.matched_count:
+            print("Feature added successfully.")
+        else:
+            print("No cat found with that name.")
+    except Exception as e:
+        print("Error:", e)
+
+def delete_cat_by_name(name):
+    """Delete a cat by name."""
+    try:
+        result = collection.delete_one({"name": name})
+        if result.deleted_count:
+            print("Cat deleted successfully.")
+        else:
+            print("No cat found with that name.")
+    except Exception as e:
+        print("Error:", e)
+
+def delete_all_cats():
+    """Delete all cats from the database."""
+    try:
+        collection.delete_many({})
+        print("All cats deleted successfully.")
+    except Exception as e:
+        print("Error:", e)
+
+# Task 2: Scraping quotes and authors
+def scrape_quotes():
+    """Scrape quotes and authors from the website and save to JSON files."""
+    base_url = "http://quotes.toscrape.com/page/"
+    quotes = []
+    authors = {}
+
+    page = 1
+    while True:
+        response = requests.get(base_url + str(page))
+        if response.status_code != 200:
+            break
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        quote_elements = soup.select(".quote")
+
+        if not quote_elements:
+            break
+
+        for element in quote_elements:
+            quote_text = element.select_one(".text").get_text()
+            author_name = element.select_one(".author").get_text()
+            tags = [tag.get_text() for tag in element.select(".tag")]
+
+            quotes.append({
+                "quote": quote_text,
+                "author": author_name,
+                "tags": tags
+            })
+
+            if author_name not in authors:
+                author_link = element.select_one(".author + a")
+                if author_link:
+                    author_url = "http://quotes.toscrape.com" + author_link["href"]
+                    author_response = requests.get(author_url)
+                    author_soup = BeautifulSoup(author_response.text, "html.parser")
+
+                    authors[author_name] = {
+                        "fullname": author_name,
+                        "born_date": author_soup.select_one(".author-born-date").get_text(),
+                        "born_location": author_soup.select_one(".author-born-location").get_text(),
+                        "description": author_soup.select_one(".author-description").get_text()
+                    }
+
+        page += 1
+
+    with open("quotes.json", "w", encoding="utf-8") as f:
+        json.dump(quotes, f, ensure_ascii=False, indent=4)
+
+    with open("authors.json", "w", encoding="utf-8") as f:
+        json.dump(list(authors.values()), f, ensure_ascii=False, indent=4)
+
+# To run specific tasks, uncomment the lines below.
+# create_cat("barsik", 3, ["ходить в капці", "дає себе гладити", "рудий"])
+# read_all_cats()
+# scrape_quotes()
