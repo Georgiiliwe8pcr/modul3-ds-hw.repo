@@ -1,0 +1,181 @@
+from pymongo import MongoClient
+from bson.objectid import ObjectId
+import json
+import requests
+from bs4 import BeautifulSoup
+
+# -------------------- Робота з базою даних (cats_database) --------------------
+
+# MongoDB Connection для cats_database
+client = MongoClient("mongodb+srv://<username>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority")
+db = client["cat_database"]
+collection = db["cats"]
+
+def create_cat(name, age, features):
+    """Створити новий запис про кота у базі даних."""
+    try:
+        cat = {"name": name, "age": age, "features": features}
+        collection.insert_one(cat)
+        print("Кота успішно додано.")
+    except Exception as e:
+        print("Помилка:", e)
+
+def read_all_cats():
+    """Зчитати всі записи про котів з бази даних."""
+    try:
+        cats = collection.find()
+        for cat in cats:
+            print(cat)
+    except Exception as e:
+        print("Помилка:", e)
+
+def read_cat_by_name(name):
+    """Знайти кота за іменем."""
+    try:
+        cat = collection.find_one({"name": name})
+        if cat:
+            print(cat)
+        else:
+            print("Кота з таким ім'ям не знайдено.")
+    except Exception as e:
+        print("Помилка:", e)
+
+def update_cat_age(name, new_age):
+    """Оновити вік кота за іменем."""
+    try:
+        result = collection.update_one({"name": name}, {"$set": {"age": new_age}})
+        if result.matched_count:
+            print("Вік кота успішно оновлено.")
+        else:
+            print("Кота з таким ім'ям не знайдено.")
+    except Exception as e:
+        print("Помилка:", e)
+
+def add_feature_to_cat(name, new_feature):
+    """Додати нову особливість коту за іменем."""
+    try:
+        result = collection.update_one({"name": name}, {"$addToSet": {"features": new_feature}})
+        if result.matched_count:
+            print("Особливість успішно додано.")
+        else:
+            print("Кота з таким ім'ям не знайдено.")
+    except Exception as e:
+        print("Помилка:", e)
+
+def delete_cat_by_name(name):
+    """Видалити кота за іменем."""
+    try:
+        result = collection.delete_one({"name": name})
+        if result.deleted_count:
+            print("Кота успішно видалено.")
+        else:
+            print("Кота з таким ім'ям не знайдено.")
+    except Exception as e:
+        print("Помилка:", e)
+
+def delete_all_cats():
+    """Видалити всіх котів з бази даних."""
+    try:
+        collection.delete_many({})
+        print("Всі коти успішно видалені.")
+    except Exception as e:
+        print("Помилка:", e)
+
+# -------------------- Скрапінг цитат та авторів --------------------
+
+def scrape_quotes():
+    """
+    Скрапінг цитат та авторів із сайту http://quotes.toscrape.com.
+    Збереження даних у файли quotes.json та authors.json.
+    """
+    base_url = "http://quotes.toscrape.com/page/"
+    quotes = []
+    authors = {}
+
+    page = 1
+    while True:
+        response = requests.get(base_url + str(page))
+        if response.status_code != 200:
+            break
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        quote_elements = soup.select(".quote")
+
+        if not quote_elements:
+            break
+
+        for element in quote_elements:
+            quote_text = element.select_one(".text").get_text()
+            author_name = element.select_one(".author").get_text()
+            tags = [tag.get_text() for tag in element.select(".tag")]
+
+            quotes.append({
+                "quote": quote_text,
+                "author": author_name,
+                "tags": tags
+            })
+
+            # Додаємо інформацію про автора, якщо вона ще не додана
+            if author_name not in authors:
+                author_link = element.select_one(".author + a")
+                if author_link:
+                    author_url = "http://quotes.toscrape.com" + author_link["href"]
+                    author_response = requests.get(author_url)
+                    author_soup = BeautifulSoup(author_response.text, "html.parser")
+
+                    authors[author_name] = {
+                        "fullname": author_name,
+                        "born_date": author_soup.select_one(".author-born-date").get_text(),
+                        "born_location": author_soup.select_one(".author-born-location").get_text(),
+                        "description": author_soup.select_one(".author-description").get_text()
+                    }
+        page += 1
+
+    # Запис даних у JSON файли
+    with open("quotes.json", "w", encoding="utf-8") as f:
+        json.dump(quotes, f, ensure_ascii=False, indent=4)
+    print("Файл quotes.json збережено.")
+
+    with open("authors.json", "w", encoding="utf-8") as f:
+        json.dump(list(authors.values()), f, ensure_ascii=False, indent=4)
+    print("Файл authors.json збережено.")
+
+# -------------------- Імпорт JSON до MongoDB (quotes_database) --------------------
+
+# MongoDB Connection для quotes_database
+client = MongoClient("mongodb+srv://<username>:<password>@cluster.mongodb.net/?retryWrites=true&w=majority")
+db = client["quotes_database"]
+authors_collection = db["authors"]
+quotes_collection = db["quotes"]
+
+def import_json_to_mongodb(json_file, collection):
+    """Імпортувати дані з JSON файлу до вказаної колекції MongoDB."""
+    try:
+        with open(json_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, list):
+                collection.insert_many(data)
+            elif isinstance(data, dict):
+                collection.insert_one(data)
+            print(f"Дані з файлу {json_file} успішно імпортовано.")
+    except Exception as e:
+        print(f"Помилка при імпорті {json_file}: {e}")
+
+# -------------------- Виклик функцій --------------------
+if __name__ == "__main__":
+    # Приклади викликів функцій:
+    
+    # Робота з котами:
+    # create_cat("Barsik", 3, ["ходить в капцях", "дає себе гладити", "рудий"])
+    # read_all_cats()
+    # update_cat_age("Barsik", 4)
+    # add_feature_to_cat("Barsik", "любить молоко")
+    # delete_cat_by_name("Barsik")
+    # delete_all_cats()
+
+    # Скрапінг цитат та авторів та збереження у JSON файли:
+    scrape_quotes()
+
+    # Імпорт даних з JSON файлів до MongoDB:
+    import_json_to_mongodb("authors.json", authors_collection)
+    import_json_to_mongodb("quotes.json", quotes_collection)
